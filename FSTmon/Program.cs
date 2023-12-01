@@ -5,78 +5,85 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Security.Permissions;
 using System.IO;
+using System.Net.Security;
 
 namespace FSTmon
 {
     class Program
     {
-        private static string sRootFolder;
+
+        static private Config konfig;
 
         static void Main(string[] args)
         {
-            Console.WriteLine("FSTmon v0.1, FileSystemTree Monitor (C) PKAR\n");
+            // Console.WriteLine("FSTmon v0.1, FileSystemTree Monitor (C) PKAR\n");
+            Console.WriteLine("FSTmon v0.7, FileSystemTree Monitor (C) PKAR\n");
 
-            sRootFolder = Environment.CurrentDirectory;
+            konfig = Config.FromCmdLine(args);
+            if (konfig == null) return; // to będzie gdy /h, /?
 
-            //string[] largs = Environment.GetCommandLineArgs();
-            if (args.Length == 2) sRootFolder = args[1];
 
-            if (!Directory.Exists(sRootFolder))
-            {
-                Console.WriteLine("FAIL: '" + sRootFolder + "' doesn't exist");
-                return;
-            }
+            Console.WriteLine("Starting to monitor '" + konfig.root + "' folder for events..");
 
-            Console.WriteLine("Starting to monitor '" + sRootFolder + "' folder for renames...");
-
-            Run(sRootFolder);
+            RunMonitor();
         }
 
         [PermissionSet(SecurityAction.Demand, Name = "FullTrust")]
-        private static void Run(string sRootFolder)
+        private static void RunMonitor()
         {
-            FileSystemWatcher watcher = new FileSystemWatcher(sRootFolder);
-            watcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName;
-            // watcher.Filter = "*.*";  // default: all
-            watcher.IncludeSubdirectories = true;
+            FileSystemWatcher watcher = new FileSystemWatcher(konfig.root);
+            watcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size;
+            watcher.Filter = konfig.mask;
+            watcher.IncludeSubdirectories = konfig.subdirs;
             // Add event handlers.
-            //watcher.Changed += OnChanged;
-            //watcher.Created += OnChanged;
-            watcher.Deleted += OnDeleted;
-            watcher.Renamed += OnRenamed;
+            if(konfig.changed) watcher.Changed += OnChanged;
+            if (konfig.created) watcher.Created += OnCreated;
+            if (konfig.deleted) watcher.Deleted += OnDeleted;
+            if (konfig.renamed) watcher.Renamed += OnRenamed;
 
             // Begin watching.
             watcher.EnableRaisingEvents = true;
 
             // Wait for the user to quit the program.
-            Console.WriteLine("Press 'q' to quit the sample.");
+            Console.WriteLine("Press 'q' to quit monitor");
             while (Console.Read() != 'q') ;
         }
 
-        private static void AddLogEntry(string sLogLine)
+
+        private static void AddLogEntry(string cmd, string sLogLine)
         {
-            Console.WriteLine(sLogLine);
-           var oWrt = File.AppendText(sRootFolder + "\\FSTmon.log");
-            oWrt.WriteLine(DateTime.Now.ToString("yyyy.MM.dd HH:mm:ss ") + sLogLine);
+            Console.WriteLine(cmd + " " + sLogLine);
+
+            if (string.IsNullOrEmpty(konfig.log)) return;
+
+           var oWrt = File.AppendText(konfig.log + "\\FSTmon.log");
+            if (konfig.logCmd)
+                sLogLine = cmd + " " + sLogLine;
+            if (konfig.logDate)
+                sLogLine = DateTime.Now.ToString("yyyy.MM.dd HH:mm:ss ") + sLogLine;
+            oWrt.WriteLine(sLogLine);
             oWrt.Flush();
             oWrt.Dispose();
         }
 
-        //// Define the event handlers.
-        //private void OnChanged(object source, FileSystemEventArgs e)
-        //{
-        //// Specify what is done when a file is changed, created, or deleted.
-        //Console.WriteLine($"File: {e.FullPath} {e.ChangeType}");
-        //    }
-
         private static void OnRenamed(object source, RenamedEventArgs e)
         {
             //AddLogEntry($"REN \"{e.OldFullPath}\" \"{e.FullPath}\"");
-            AddLogEntry($"REN \"{e.OldName}\" \"{e.Name}\"");
+            AddLogEntry("REN",$"\"{e.OldName}\" \"{e.Name}\"");
         }
         private static void OnDeleted(object source, FileSystemEventArgs e)
         {
-            AddLogEntry($"REM DEL \"{e.FullPath}\"");
+            AddLogEntry("DEL",$"\"{e.FullPath}\"");
+        }
+
+        private static void OnChanged(object sender, FileSystemEventArgs e)
+        {
+            AddLogEntry("REM CHG",$"\"{e.FullPath}\"");
+        }
+
+        private static void OnCreated(object sender, FileSystemEventArgs e)
+        {
+            AddLogEntry("REM ADD","\"{e.FullPath}\"");
         }
     }
 }
